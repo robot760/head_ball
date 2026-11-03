@@ -1,0 +1,1539 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Head Ball 2D - Arcade Football</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Teko:wght@600;700&display=swap');
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #0b0f19;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            color: white;
+            font-family: 'Press Start 2P', cursive, sans-serif;
+            overflow: hidden;
+            touch-action: none;
+        }
+
+        #game-container {
+            position: relative;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.9), 0 0 40px rgba(59, 130, 246, 0.3);
+            border-radius: 12px;
+            overflow: hidden;
+            border: 4px solid #374151;
+            width: 800px;
+            height: 500px;
+            background: #0f172a;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            background-color: #87CEEB;
+        }
+
+        #instructions-bar {
+            margin-top: 14px;
+            font-size: 10px;
+            text-align: center;
+            line-height: 1.8;
+            color: #9ca3af;
+            background: #1f2937;
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: 1px solid #374151;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        }
+
+        .key {
+            background-color: #374151;
+            color: #f3f4f6;
+            padding: 3px 7px;
+            border-radius: 4px;
+            border: 1px solid #4b5563;
+            box-shadow: 0 2px 0 #111827;
+            font-size: 9px;
+            display: inline-block;
+        }
+
+        @media (max-width: 840px) {
+            #game-container {
+                width: 95vw;
+                height: 59.375vw;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="gameCanvas" width="800" height="500"></canvas>
+</div>
+
+<div id="instructions-bar">
+    <strong>P1:</strong> <span class="key">A</span>/<span class="key">D</span> Muovi | <span class="key">W</span> Salta | <span class="key">SPAZIO</span> Calcio &nbsp;|&nbsp; 
+    <strong>P2 (2P Mode):</strong> <span class="key">←</span>/<span class="key">→</span> Muovi | <span class="key">↑</span> Salta | <span class="key">0</span> Calcio
+</div>
+
+<script>
+    // --- CANVAS & CONTEXT SETUP ---
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // --- GAME CONSTANTS ---
+    const GRAVITY = 0.42;
+    const FRICTION = 0.985;
+    const GROUND_Y = 400;
+    const GOAL_WIDTH = 95;
+    const GOAL_HEIGHT = 175;
+    const CROSSBAR_Y = GROUND_Y - GOAL_HEIGHT;
+    const BALL_RADIUS = 15;
+
+    // --- SKINS DEFINITIONS (FC 27 STYLE) ---
+    const SKINS = [
+        {
+            id: 'clown',
+            name: 'JOKER CLOWN',
+            tagline: 'TICKLISH & DEADLY',
+            hairColor: '#f97316',
+            faceColor: '#f8fafc',
+            noseColor: '#ef4444',
+            shoeColor1: '#a855f7',
+            shoeColor2: '#22c55e',
+            type: 'clown'
+        },
+        {
+            id: 'gold',
+            name: 'GOLD LEGEND',
+            tagline: 'BALLON D\'OR WINNER',
+            hairColor: '#eab308',
+            faceColor: '#fed7aa',
+            beardColor: '#78350f',
+            shoeColor1: '#eab308',
+            shoeColor2: '#dc2626',
+            type: 'gold'
+        },
+        {
+            id: 'cyber',
+            name: 'CYBER BOT',
+            tagline: 'LASER ACCURACY',
+            headColor: '#94a3b8',
+            visorColor: '#ef4444',
+            shoeColor1: '#06b6d4',
+            shoeColor2: '#0f172a',
+            type: 'cyber'
+        },
+        {
+            id: 'demon',
+            name: 'RED DEMON',
+            tagline: 'INFERNAL POWER',
+            faceColor: '#dc2626',
+            hornColor: '#0f172a',
+            shoeColor1: '#111827',
+            shoeColor2: '#ef4444',
+            type: 'demon'
+        },
+        {
+            id: 'blue',
+            name: 'CLASSIC BLUE',
+            tagline: 'THE SPEEDSTER',
+            hairColor: '#0284c7',
+            faceColor: '#fca5a5',
+            shoeColor1: '#0284c7',
+            shoeColor2: '#ffffff',
+            type: 'classic_blue'
+        },
+        {
+            id: 'red',
+            name: 'CLASSIC RED',
+            tagline: 'THE CANNON',
+            hairColor: '#ef4444',
+            faceColor: '#fca5a5',
+            shoeColor1: '#dc2626',
+            shoeColor2: '#facc15',
+            type: 'classic_red'
+        }
+    ];
+
+    // --- GAME STATE ---
+    // States: 'START', 'MENU', 'SELECT_CHAR', 'CONTROLS', 'PLAYING', 'GOAL', 'GAMEOVER'
+    let gameState = 'START';
+    let gameMode = '1P'; // '1P' or '2P'
+    let goalTimer = 0;
+    let winnerText = "";
+    let confettis = [];
+    let pulseTimer = 0;
+    let previewAnimTimer = 0;
+
+    let selectedP1Index = 0;
+    let selectedCPUIndex = 1;
+
+    let score = { player: 0, cpu: 0 };
+    let selectedMenuItem = 0;
+    const menuOptions = ["INIZIA PARTITA", "CONTROLLI"];
+
+    // Input States
+    const keys = {
+        p1Left: false, p1Right: false, p1Jump: false, p1Kick: false,
+        p2Left: false, p2Right: false, p2Jump: false, p2Kick: false,
+        enterPressed: false, upPressed: false, downPressed: false,
+        leftPressed: false, rightPressed: false, mPressed: false
+    };
+
+    let mouseX = 0;
+    let mouseY = 0;
+
+    canvas.addEventListener('mousemove', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        mouseX = (e.clientX - rect.left) * scaleX;
+        mouseY = (e.clientY - rect.top) * scaleY;
+    });
+
+    canvas.addEventListener('click', (e) => {
+        if (gameState === 'START') {
+            gameState = 'MENU';
+        } else if (gameState === 'MENU') {
+            if (selectedMenuItem === 0) {
+                gameState = 'SELECT_CHAR';
+            } else if (selectedMenuItem === 1) {
+                gameState = 'CONTROLS';
+            }
+        } else if (gameState === 'SELECT_CHAR') {
+            handleCharSelectClick();
+        } else if (gameState === 'CONTROLS') {
+            gameState = 'MENU';
+        } else if (gameState === 'GAMEOVER') {
+            gameState = 'MENU';
+        }
+    });
+
+    // --- KEYBOARD LISTENERS ---
+    window.addEventListener('keydown', (e) => {
+        // P1 Keys
+        if (e.code === 'KeyA') keys.p1Left = true;
+        if (e.code === 'KeyD') keys.p1Right = true;
+        if (e.code === 'KeyW') keys.p1Jump = true;
+        if (e.code === 'Space') keys.p1Kick = true;
+
+        // P2 Keys or Arrows in Menu/1P
+        if (e.code === 'ArrowLeft') {
+            if (gameMode === '2P') keys.p2Left = true;
+            else keys.p1Left = true;
+
+            if (gameState === 'SELECT_CHAR' && !keys.leftPressed) {
+                selectedP1Index = (selectedP1Index - 1 + SKINS.length) % SKINS.length;
+                keys.leftPressed = true;
+            }
+        }
+        if (e.code === 'ArrowRight') {
+            if (gameMode === '2P') keys.p2Right = true;
+            else keys.p1Right = true;
+
+            if (gameState === 'SELECT_CHAR' && !keys.rightPressed) {
+                selectedP1Index = (selectedP1Index + 1) % SKINS.length;
+                keys.rightPressed = true;
+            }
+        }
+        if (e.code === 'ArrowUp') {
+            if (gameMode === '2P') keys.p2Jump = true;
+            else keys.p1Jump = true;
+
+            if (gameState === 'MENU' && !keys.upPressed) {
+                selectedMenuItem = (selectedMenuItem - 1 + menuOptions.length) % menuOptions.length;
+                keys.upPressed = true;
+            } else if (gameState === 'SELECT_CHAR' && !keys.upPressed) {
+                selectedCPUIndex = (selectedCPUIndex - 1 + SKINS.length) % SKINS.length;
+                keys.upPressed = true;
+            }
+        }
+        if (e.code === 'ArrowDown' || e.code === 'KeyS') {
+            if (gameState === 'MENU' && !keys.downPressed) {
+                selectedMenuItem = (selectedMenuItem + 1) % menuOptions.length;
+                keys.downPressed = true;
+            } else if (gameState === 'SELECT_CHAR' && !keys.downPressed) {
+                selectedCPUIndex = (selectedCPUIndex + 1) % SKINS.length;
+                keys.downPressed = true;
+            }
+        }
+
+        // P2 Kick (Numpad 0 or Key0)
+        if (e.code === 'Numpad0' || e.code === 'Digit0' || e.code === 'Key0') {
+            keys.p2Kick = true;
+        }
+
+        // Toggle Game Mode ('M' Key in SELECT_CHAR)
+        if (e.code === 'KeyM') {
+            if (gameState === 'SELECT_CHAR' && !keys.mPressed) {
+                gameMode = gameMode === '1P' ? '2P' : '1P';
+                keys.mPressed = true;
+            }
+        }
+
+        if (e.code === 'Enter') {
+            if (!keys.enterPressed) {
+                keys.enterPressed = true;
+                if (gameState === 'START') {
+                    gameState = 'MENU';
+                } else if (gameState === 'MENU') {
+                    if (selectedMenuItem === 0) gameState = 'SELECT_CHAR';
+                    else if (selectedMenuItem === 1) gameState = 'CONTROLS';
+                } else if (gameState === 'SELECT_CHAR') {
+                    startMatch();
+                } else if (gameState === 'CONTROLS') {
+                    gameState = 'MENU';
+                } else if (gameState === 'GAMEOVER') {
+                    gameState = 'MENU';
+                }
+            }
+        }
+    });
+
+    window.addEventListener('keyup', (e) => {
+        if (e.code === 'KeyA') keys.p1Left = false;
+        if (e.code === 'KeyD') keys.p1Right = false;
+        if (e.code === 'KeyW') keys.p1Jump = false;
+        if (e.code === 'Space') keys.p1Kick = false;
+
+        if (e.code === 'ArrowLeft') {
+            keys.p1Left = false; keys.p2Left = false; keys.leftPressed = false;
+        }
+        if (e.code === 'ArrowRight') {
+            keys.p1Right = false; keys.p2Right = false; keys.rightPressed = false;
+        }
+        if (e.code === 'ArrowUp') {
+            keys.p1Jump = false; keys.p2Jump = false; keys.upPressed = false;
+        }
+        if (e.code === 'ArrowDown' || e.code === 'KeyS') keys.downPressed = false;
+
+        if (e.code === 'Numpad0' || e.code === 'Digit0' || e.code === 'Key0') {
+            keys.p2Kick = false;
+        }
+
+        if (e.code === 'KeyM') keys.mPressed = false;
+        if (e.code === 'Enter') keys.enterPressed = false;
+    });
+
+    // --- AI TRAJECTORY PREDICTOR ---
+    function predictBallTrajectory(ball, steps = 50) {
+        let simX = ball.x;
+        let simY = ball.y;
+        let simVx = ball.vx;
+        let simVy = ball.vy;
+        let points = [];
+
+        for (let i = 0; i < steps; i++) {
+            simVy += GRAVITY;
+            simX += simVx;
+            simY += simVy;
+            simVx *= 0.992;
+            simVy *= 0.992;
+
+            if (simY + BALL_RADIUS > GROUND_Y) {
+                simY = GROUND_Y - BALL_RADIUS;
+                simVy *= -0.68;
+                simVx *= FRICTION;
+            }
+            if (simX - BALL_RADIUS < 0) {
+                simX = BALL_RADIUS;
+                simVx *= -0.68;
+            }
+            if (simX + BALL_RADIUS > canvas.width) {
+                simX = canvas.width - BALL_RADIUS;
+                simVx *= -0.68;
+            }
+            points.push({ x: simX, y: simY, vx: simVx, vy: simVy });
+        }
+        return points;
+    }
+
+    function startMatch() {
+        score.player = 0;
+        score.cpu = 0;
+        confettis = [];
+        player1.skin = SKINS[selectedP1Index];
+        player2.skin = SKINS[selectedCPUIndex];
+        player2.isAI = (gameMode === '1P');
+        resetPositions();
+        gameState = 'PLAYING';
+    }
+
+    // --- CONFETTI SYSTEM ---
+    class Confetti {
+        constructor(x, y) {
+            this.x = x;
+            this.y = y;
+            this.vx = (Math.random() - 0.5) * 12;
+            this.vy = -8 - Math.random() * 8;
+            this.size = 6 + Math.random() * 6;
+            this.color = ['#ef4444', '#3b82f6', '#facc15', '#10b981', '#a855f7', '#ec4899', '#f97316'][Math.floor(Math.random()*7)];
+            this.rotation = Math.random() * Math.PI * 2;
+            this.vRot = (Math.random() - 0.5) * 0.3;
+            this.opacity = 1;
+            this.life = 120 + Math.random() * 40;
+        }
+
+        update() {
+            this.x += this.vx;
+            this.y += this.vy;
+            this.vy += 0.22;
+            this.vx *= 0.98;
+            this.rotation += this.vRot;
+            this.life--;
+            if (this.life < 30) {
+                this.opacity = Math.max(0, this.life / 30);
+            }
+        }
+
+        draw(ctx) {
+            if (this.opacity <= 0) return;
+            ctx.save();
+            ctx.translate(this.x, this.y);
+            ctx.rotate(this.rotation);
+            ctx.globalAlpha = this.opacity;
+            ctx.fillStyle = this.color;
+            ctx.fillRect(-this.size / 2, -this.size / 4, this.size, this.size / 2);
+            ctx.restore();
+        }
+    }
+
+    // --- BALL CLASS ---
+    class Ball {
+        constructor(x, y) {
+            this.x = x;
+            this.y = y;
+            this.vx = 0;
+            this.vy = 0;
+            this.radius = BALL_RADIUS;
+            this.restitution = 0.68;
+            this.rotation = 0;
+        }
+
+        update() {
+            this.vy += GRAVITY;
+            this.x += this.vx;
+            this.y += this.vy;
+
+            this.vx *= 0.992;
+            this.vy *= 0.992;
+            
+            this.rotation += this.vx * 0.05;
+
+            // SOFT ROLLING/SLIDING PHYSICS ON TOP OF THE GOAL NET & CROSSBAR
+            let isOverLeftGoal = this.x - this.radius < GOAL_WIDTH + 10;
+            let isOverRightGoal = this.x + this.radius > canvas.width - GOAL_WIDTH - 10;
+
+            if ((isOverLeftGoal || isOverRightGoal) && this.y < CROSSBAR_Y) {
+                if (this.y + this.radius >= CROSSBAR_Y - 8 && this.y + this.radius <= CROSSBAR_Y + 8) {
+                    this.y = CROSSBAR_Y - 8 - this.radius;
+                    this.vy *= -0.25; // Soft bounce
+                    
+                    // Gentle roll outwards towards the pitch
+                    if (isOverLeftGoal) {
+                        this.vx += 0.4;
+                    } else {
+                        this.vx -= 0.4;
+                    }
+                }
+            }
+
+            // Ground bounce
+            if (this.y + this.radius > GROUND_Y) {
+                this.y = GROUND_Y - this.radius;
+                this.vy *= -this.restitution;
+                this.vx *= FRICTION;
+            }
+
+            // Ceiling bounce
+            if (this.y - this.radius < 0) {
+                this.y = this.radius;
+                this.vy *= -this.restitution;
+            }
+
+            // Outer bounds
+            if (this.x - this.radius < 0) {
+                this.x = this.radius;
+                this.vx *= -this.restitution;
+            }
+            if (this.x + this.radius > canvas.width) {
+                this.x = canvas.width - this.radius;
+                this.vx *= -this.restitution;
+            }
+
+            // Goal net inside drag
+            if (this.y > CROSSBAR_Y) {
+                if (this.x < GOAL_WIDTH - 5 || this.x > canvas.width - GOAL_WIDTH + 5) {
+                    this.vx *= 0.88;
+                    this.vy *= 0.88;
+                }
+            }
+        }
+
+        draw(ctx) {
+            ctx.save();
+            ctx.translate(this.x, this.y);
+            ctx.rotate(this.rotation);
+            
+            ctx.beginPath();
+            ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+            
+            let grad = ctx.createRadialGradient(-this.radius * 0.3, -this.radius * 0.3, this.radius * 0.1, 0, 0, this.radius);
+            grad.addColorStop(0, '#ffffff');
+            grad.addColorStop(0.7, '#e2e8f0');
+            grad.addColorStop(1, '#94a3b8');
+            ctx.fillStyle = grad;
+            ctx.fill();
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = '#1e293b';
+            ctx.stroke();
+
+            // Soccer ball pattern
+            ctx.fillStyle = '#0f172a';
+            ctx.beginPath();
+            for (let i = 0; i < 5; i++) {
+                let ang = i * Math.PI * 2 / 5;
+                ctx.lineTo(Math.cos(ang) * this.radius * 0.42, Math.sin(ang) * this.radius * 0.42);
+            }
+            ctx.fill();
+            
+            for (let i = 0; i < 5; i++) {
+                let ang = i * Math.PI * 2 / 5;
+                ctx.beginPath();
+                ctx.moveTo(Math.cos(ang) * this.radius * 0.42, Math.sin(ang) * this.radius * 0.42);
+                let outerAng = ang + Math.PI / 5;
+                ctx.lineTo(Math.cos(outerAng) * this.radius * 0.92, Math.sin(outerAng) * this.radius * 0.92);
+                ctx.lineWidth = 1.2;
+                ctx.strokeStyle = '#0f172a';
+                ctx.stroke();
+            }
+
+            // Gloss overlay
+            ctx.beginPath();
+            ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+            let overlay = ctx.createRadialGradient(-this.radius * 0.3, -this.radius * 0.3, this.radius * 0.1, 0, 0, this.radius);
+            overlay.addColorStop(0, 'rgba(255,255,255,0.5)');
+            overlay.addColorStop(0.6, 'rgba(0,0,0,0)');
+            overlay.addColorStop(1, 'rgba(0,0,0,0.5)');
+            ctx.fillStyle = overlay;
+            ctx.fill();
+
+            ctx.restore();
+        }
+    }
+
+    // --- DRAW DETAILED SKIN RENDERER ---
+    function drawSkinHead(ctx, x, y, radius, dir, skin) {
+        ctx.save();
+        ctx.translate(x, y);
+
+        switch (skin.type) {
+            case 'clown':
+                ctx.fillStyle = skin.faceColor;
+                ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.fill();
+                ctx.lineWidth = 2; ctx.strokeStyle = '#0f172a'; ctx.stroke();
+
+                ctx.fillStyle = skin.hairColor;
+                ctx.beginPath();
+                ctx.moveTo(-radius * 0.9, -radius * 0.3);
+                ctx.lineTo(-radius * 1.2, -radius * 1.1);
+                ctx.lineTo(-radius * 0.5, -radius * 0.9);
+                ctx.lineTo(0, -radius * 1.4);
+                ctx.lineTo(radius * 0.5, -radius * 0.9);
+                ctx.lineTo(radius * 1.2, -radius * 1.1);
+                ctx.lineTo(radius * 0.9, -radius * 0.3);
+                ctx.closePath();
+                ctx.fill(); ctx.stroke();
+
+                ctx.fillStyle = '#22c55e';
+                ctx.beginPath();
+                ctx.moveTo(dir * 16, -14); ctx.lineTo(dir * 20, -8);
+                ctx.lineTo(dir * 16, -2); ctx.lineTo(dir * 12, -8); ctx.closePath(); ctx.fill();
+
+                ctx.fillStyle = '#0f172a';
+                ctx.beginPath(); ctx.arc(dir * 16, -8, 3, 0, Math.PI * 2); ctx.fill();
+
+                ctx.fillStyle = skin.noseColor;
+                ctx.beginPath(); ctx.arc(dir * 22, 0, 8, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+                ctx.fillStyle = '#dc2626';
+                ctx.beginPath();
+                ctx.arc(dir * 12, 12, 12, 0, Math.PI); ctx.fill(); ctx.stroke();
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(dir * 6, 12, 12, 4);
+                break;
+
+            case 'gold':
+                ctx.fillStyle = skin.faceColor;
+                ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.fill();
+                ctx.lineWidth = 2; ctx.strokeStyle = '#0f172a'; ctx.stroke();
+
+                ctx.fillStyle = skin.hairColor;
+                ctx.beginPath();
+                ctx.arc(0, -4, radius + 1, Math.PI * 1.1, Math.PI * 1.9);
+                ctx.fill(); ctx.stroke();
+
+                ctx.fillStyle = skin.beardColor;
+                ctx.beginPath();
+                ctx.arc(0, 4, radius, 0.1 * Math.PI, 0.9 * Math.PI);
+                ctx.fill();
+
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath(); ctx.arc(dir * 16, -6, 8, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+                ctx.fillStyle = '#0f172a';
+                ctx.beginPath(); ctx.arc(dir * 18, -6, 3.5, 0, Math.PI * 2); ctx.fill();
+                break;
+
+            case 'cyber':
+                ctx.fillStyle = skin.headColor;
+                ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.fill();
+                ctx.lineWidth = 2; ctx.strokeStyle = '#0f172a'; ctx.stroke();
+
+                ctx.fillStyle = skin.visorColor;
+                ctx.beginPath();
+                ctx.roundRect(dir * 2, -12, 28 * dir, 12, 4);
+                ctx.fill(); ctx.stroke();
+
+                ctx.fillStyle = '#fef08a';
+                ctx.fillRect(dir * 12, -8, 8 * dir, 4);
+
+                ctx.strokeStyle = '#0f172a'; ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(dir * 6, 12); ctx.lineTo(dir * 22, 12); ctx.stroke();
+                for (let xg = 8; xg <= 20; xg += 4) {
+                    ctx.moveTo(dir * xg, 8); ctx.lineTo(dir * xg, 16); ctx.stroke();
+                }
+                break;
+
+            case 'demon':
+                ctx.fillStyle = skin.faceColor;
+                ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.fill();
+                ctx.lineWidth = 2; ctx.strokeStyle = '#0f172a'; ctx.stroke();
+
+                ctx.fillStyle = skin.hornColor;
+                ctx.beginPath();
+                ctx.moveTo(-10, -radius + 4); ctx.lineTo(-18, -radius - 18); ctx.lineTo(-2, -radius - 4); ctx.fill(); ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(10, -radius + 4); ctx.lineTo(18, -radius - 18); ctx.lineTo(2, -radius - 4); ctx.fill(); ctx.stroke();
+
+                ctx.fillStyle = '#facc15';
+                ctx.beginPath(); ctx.arc(dir * 16, -6, 9, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+                ctx.fillStyle = '#0f172a';
+                ctx.fillRect(dir * 17, -11, 2, 10);
+
+                ctx.lineWidth = 3; ctx.strokeStyle = '#0f172a';
+                ctx.beginPath();
+                ctx.moveTo(dir * 8, 16); ctx.lineTo(dir * 24, 10); ctx.stroke();
+                break;
+
+            case 'classic_blue':
+            case 'classic_red':
+            default:
+                ctx.fillStyle = skin.faceColor;
+                ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.fill();
+                ctx.lineWidth = 2; ctx.strokeStyle = '#0f172a'; ctx.stroke();
+
+                ctx.fillStyle = skin.hairColor;
+                ctx.beginPath();
+                ctx.arc(0, -6, radius + 1, Math.PI * 1.1, Math.PI * 1.9);
+                ctx.fill(); ctx.stroke();
+
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath(); ctx.arc(dir * 16, -6, 9, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+                ctx.fillStyle = '#0f172a';
+                ctx.beginPath(); ctx.arc(dir * 18, -6, 4, 0, Math.PI * 2); ctx.fill();
+
+                ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.arc(dir * 12, 12, 6, 0, Math.PI, false); ctx.stroke();
+                break;
+        }
+
+        ctx.restore();
+    }
+
+    function drawSkinFoot(ctx, footX, footY, footRadius, dir, isKicking, kickAngle, skin) {
+        ctx.save();
+        ctx.translate(footX, footY);
+        if (isKicking) ctx.rotate(kickAngle);
+
+        ctx.fillStyle = skin.shoeColor1;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, footRadius * 1.35, footRadius * 0.85, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.lineWidth = 2; ctx.strokeStyle = '#0f172a'; ctx.stroke();
+
+        ctx.fillStyle = skin.shoeColor2;
+        ctx.fillRect(dir * -4, -5, 8, 10);
+
+        ctx.restore();
+    }
+
+    // --- PLAYER CLASS ---
+    class Player {
+        constructor(x, team, isAI, skin) {
+            this.startX = x;
+            this.x = x;
+            this.headRadius = 28;
+            this.y = GROUND_Y - this.headRadius;
+            this.vx = 0;
+            this.vy = 0;
+            this.speed = 4.0;
+            this.acceleration = 0.75;
+            this.jumpForce = -9.2;
+            this.team = team;
+            this.isAI = isAI;
+            this.skin = skin || SKINS[0];
+
+            this.isKicking = false;
+            this.kickTimer = 0;
+            this.kickDuration = 14;
+            this.kickAngle = 0;
+
+            this.footRadius = 14;
+            this.footX = 0;
+            this.footY = 0;
+
+            this.aiReactionTimer = 0;
+            this.aiErrorOffset = 0;
+        }
+
+        update(ball) {
+            this.vy += GRAVITY;
+            this.y += this.vy;
+            this.x += this.vx;
+            
+            if (this.y + this.headRadius > GROUND_Y) {
+                this.y = GROUND_Y - this.headRadius;
+                this.vy = 0;
+            }
+
+            this.vx *= 0.82;
+            let dir = this.team === 1 ? 1 : -1;
+
+            if (gameState === 'PLAYING') {
+                let movingLeft = false;
+                let movingRight = false;
+                let jumping = false;
+                let kicking = false;
+
+                if (this.team === 1) {
+                    movingLeft = keys.p1Left;
+                    movingRight = keys.p1Right;
+                    jumping = keys.p1Jump;
+                    kicking = keys.p1Kick;
+                } else if (this.team === 2 && !this.isAI) {
+                    movingLeft = keys.p2Left;
+                    movingRight = keys.p2Right;
+                    jumping = keys.p2Jump;
+                    kicking = keys.p2Kick;
+                } else if (this.team === 2 && this.isAI) {
+                    // --- SMART CPU AI STATE MACHINE ---
+                    this.aiReactionTimer++;
+                    if (this.aiReactionTimer % 10 === 0) {
+                        this.aiErrorOffset = (Math.random() - 0.5) * 10;
+                    }
+
+                    let trajectory = predictBallTrajectory(ball, 50);
+                    let goalLineX = canvas.width - GOAL_WIDTH - 15;
+                    
+                    let isGoalThreat = false;
+                    for (let p of trajectory) {
+                        if (p.x > canvas.width - GOAL_WIDTH - 25 && p.y > CROSSBAR_Y - 10) {
+                            isGoalThreat = true;
+                            break;
+                        }
+                    }
+
+                    let aiState = 'DEFEND_GOAL';
+                    if (isGoalThreat || ball.x > canvas.width - GOAL_WIDTH - 50) {
+                        aiState = 'EMERGENCY_SAVE';
+                    } else if (Math.hypot(ball.x - this.footX, ball.y - this.footY) < 75) {
+                        aiState = 'ATTACK_KICK';
+                    } else if (ball.x > 320 && ball.y < GROUND_Y - 30 && Math.abs(ball.x - this.x) < 80) {
+                        aiState = 'POWER_HEADER';
+                    } else if (ball.x > 250) {
+                        aiState = 'INTERCEPT_TRAJECTORY';
+                    }
+
+                    switch(aiState) {
+                        case 'EMERGENCY_SAVE':
+                            if (this.x > goalLineX + 6) movingLeft = true;
+                            else if (this.x < goalLineX - 6) movingRight = true;
+
+                            if (ball.x > canvas.width - GOAL_WIDTH - 90 && ball.y < GROUND_Y - 10) {
+                                jumping = true;
+                                if (Math.abs(ball.x - this.x) < 65) kicking = true;
+                            }
+                            break;
+
+                        case 'POWER_HEADER':
+                            let headerTargetX = ball.x + 22 + this.aiErrorOffset;
+                            if (this.x > headerTargetX + 6) movingLeft = true;
+                            else if (this.x < headerTargetX - 6) movingRight = true;
+
+                            if (ball.y < this.y - 10 && ball.y > 100 && Math.abs(ball.x - this.x) < 55 && this.y + this.headRadius >= GROUND_Y) {
+                                jumping = true;
+                            }
+                            if (Math.hypot(ball.x - this.footX, ball.y - this.footY) < 65) kicking = true;
+                            break;
+
+                        case 'INTERCEPT_TRAJECTORY':
+                            let interceptX = ball.x + 28 + this.aiErrorOffset;
+                            for (let p of trajectory) {
+                                if (Math.abs(p.y - (GROUND_Y - this.headRadius * 2)) < 30) {
+                                    interceptX = p.x + 26;
+                                    break;
+                                }
+                            }
+                            if (this.x > interceptX + 8) movingLeft = true;
+                            else if (this.x < interceptX - 8) movingRight = true;
+
+                            if (ball.y < this.y - 15 && Math.abs(ball.x - this.x) < 55 && this.y + this.headRadius >= GROUND_Y) {
+                                jumping = true;
+                            }
+                            if (Math.hypot(ball.x - this.footX, ball.y - this.footY) < 65 && ball.x < this.x + 15) {
+                                kicking = true;
+                            }
+                            break;
+
+                        case 'ATTACK_KICK':
+                            kicking = true;
+                            if (ball.x < this.x) movingLeft = true;
+                            if (ball.y < this.y - 20 && this.y + this.headRadius >= GROUND_Y) jumping = true;
+                            break;
+
+                        case 'DEFEND_GOAL':
+                        default:
+                            let homeX = ball.x < 300 ? 580 : 620;
+                            if (this.x > homeX + 10) movingLeft = true;
+                            else if (this.x < homeX - 10) movingRight = true;
+
+                            if (ball.y < this.y - 30 && Math.abs(ball.x - this.x) < 45 && this.y + this.headRadius >= GROUND_Y) {
+                                jumping = true;
+                            }
+                            break;
+                    }
+
+                    if (movingLeft) this.vx -= this.acceleration;
+                    if (movingRight) this.vx += this.acceleration;
+                }
+
+                if (!this.isAI) {
+                    if (movingLeft) this.vx -= this.acceleration;
+                    if (movingRight) this.vx += this.acceleration;
+                }
+
+                if (this.vx > this.speed) this.vx = this.speed;
+                if (this.vx < -this.speed) this.vx = -this.speed;
+
+                if (jumping && this.y + this.headRadius >= GROUND_Y) {
+                    this.vy = this.jumpForce;
+                }
+
+                if (kicking && !this.isKicking) {
+                    this.isKicking = true;
+                    this.kickTimer = this.kickDuration;
+                }
+            }
+
+            // Foot Position & Swing Dynamics
+            let baseFootOffsetX = dir * 18;
+            let baseFootOffsetY = this.headRadius - 4;
+
+            if (this.isKicking) {
+                this.kickTimer--;
+                let progress = 1 - (this.kickTimer / this.kickDuration);
+                this.kickAngle = Math.sin(progress * Math.PI) * (-Math.PI / 2.2) * dir;
+
+                let swingReach = Math.sin(progress * Math.PI) * 36 * dir;
+                let swingLift = -Math.sin(progress * Math.PI) * 18;
+
+                this.footX = this.x + baseFootOffsetX + swingReach;
+                this.footY = this.y + baseFootOffsetY + swingLift;
+
+                // Active Kick Impact
+                let dx = ball.x - this.footX;
+                let dy = ball.y - this.footY;
+                let dist = Math.hypot(dx, dy);
+
+                if (dist < ball.radius + this.footRadius + 14) {
+                    let force = 16;
+                    ball.vx = dir * force;
+                    ball.vy = -7.5 - Math.random() * 2;
+                    ball.rotation += dir * 0.4;
+                }
+
+                if (this.kickTimer <= 0) {
+                    this.isKicking = false;
+                    this.kickAngle = 0;
+                }
+            } else {
+                this.footX = this.x + baseFootOffsetX;
+                this.footY = this.y + baseFootOffsetY;
+            }
+
+            // Pitch Limits
+            if (this.x < GOAL_WIDTH + this.headRadius) {
+                this.x = GOAL_WIDTH + this.headRadius;
+                this.vx = 0;
+            }
+            if (this.x > canvas.width - GOAL_WIDTH - this.headRadius) {
+                this.x = canvas.width - GOAL_WIDTH - this.headRadius;
+                this.vx = 0;
+            }
+        }
+
+        draw(ctx) {
+            let dir = this.team === 1 ? 1 : -1;
+            drawSkinFoot(ctx, this.footX, this.footY, this.footRadius, dir, this.isKicking, this.kickAngle, this.skin);
+            drawSkinHead(ctx, this.x, this.y, this.headRadius, dir, this.skin);
+        }
+    }
+
+    // --- INSTANTIATION ---
+    let ball = new Ball(400, 180);
+    let player1 = new Player(200, 1, false, SKINS[0]);
+    let player2 = new Player(600, 2, true, SKINS[1]);
+
+    // --- COLLISION RESOLUTION ---
+    function resolveCircleCollision(c1, c2, isPlayer) {
+        let dx = c1.x - c2.x;
+        let dy = c1.y - c2.y;
+        let dist = Math.hypot(dx, dy);
+
+        let radius2 = c2.headRadius || c2.footRadius || c2.radius || 0;
+        let minDist = c1.radius + radius2;
+
+        if (dist < minDist && dist > 0) {
+            let nx = dx / dist;
+            let ny = dy / dist;
+
+            let overlap = minDist - dist;
+            c1.x += nx * overlap;
+            c1.y += ny * overlap;
+
+            let rvx = c1.vx - (c2.vx || 0);
+            let rvy = c1.vy - (c2.vy || 0);
+            let velAlongNormal = rvx * nx + rvy * ny;
+
+            if (velAlongNormal < 0) {
+                let e = isPlayer ? 0.88 : 0.75;
+                let impulse = -(1 + e) * velAlongNormal;
+
+                c1.vx += impulse * nx;
+                c1.vy += impulse * ny;
+
+                let tx = -ny;
+                let ty = nx;
+                let velAlongTangent = rvx * tx + rvy * ty;
+                let friction = 0.45;
+                c1.vx -= velAlongTangent * tx * friction;
+                c1.vy -= velAlongTangent * ty * friction;
+
+                if (isPlayer && c2.headRadius) {
+                    if (ny < -0.15) {
+                        c1.vy = Math.min(c1.vy, -6.5 + (c2.vy < 0 ? c2.vy * 0.5 : 0));
+                        c1.vx += (c2.vx || 0) * 0.5;
+                    }
+                    c1.rotation += (c1.vx - (c2.vx || 0)) * 0.1;
+                }
+            }
+        }
+    }
+
+    function checkCollisions() {
+        resolveCircleCollision(ball, player1, true);
+        resolveCircleCollision(ball, player2, true);
+
+        let foot1 = { x: player1.footX, y: player1.footY, footRadius: player1.footRadius, vx: player1.vx, vy: player1.vy };
+        let foot2 = { x: player2.footX, y: player2.footY, footRadius: player2.footRadius, vx: player2.vx, vy: player2.vy };
+        resolveCircleCollision(ball, foot1, true);
+        resolveCircleCollision(ball, foot2, true);
+
+        let leftPost = { x: GOAL_WIDTH, y: CROSSBAR_Y, radius: 6 };
+        let rightPost = { x: canvas.width - GOAL_WIDTH, y: CROSSBAR_Y, radius: 6 };
+
+        resolveCircleCollision(ball, leftPost, false);
+        resolveCircleCollision(ball, rightPost, false);
+
+        if (ball.x < GOAL_WIDTH && ball.y + ball.radius > CROSSBAR_Y && ball.y < CROSSBAR_Y + 12) {
+            ball.y = CROSSBAR_Y - ball.radius;
+            ball.vy *= -ball.restitution;
+        }
+        if (ball.x > canvas.width - GOAL_WIDTH && ball.y + ball.radius > CROSSBAR_Y && ball.y < CROSSBAR_Y + 12) {
+            ball.y = CROSSBAR_Y - ball.radius;
+            ball.vy *= -ball.restitution;
+        }
+    }
+
+    function checkGoals() {
+        if (gameState !== 'PLAYING') return;
+
+        if (ball.y > CROSSBAR_Y + 10) {
+            if (ball.x < GOAL_WIDTH - BALL_RADIUS) {
+                score.cpu++;
+                triggerGoal("GOAL PLAYER 2!", false);
+            } else if (ball.x > canvas.width - GOAL_WIDTH + BALL_RADIUS) {
+                score.player++;
+                triggerGoal("GOAL PLAYER 1!", true);
+            }
+        }
+    }
+
+    function triggerGoal(text, isPlayerGoal) {
+        gameState = 'GOAL';
+        goalTimer = 120;
+        winnerText = text;
+
+        let confettiX = isPlayerGoal ? canvas.width - GOAL_WIDTH / 2 : GOAL_WIDTH / 2;
+        let confettiY = CROSSBAR_Y - 20;
+        confettis = [];
+        for (let i = 0; i < 110; i++) {
+            confettis.push(new Confetti(confettiX + (Math.random() - 0.5) * 60, confettiY));
+        }
+
+        if (score.player >= 5 || score.cpu >= 5) {
+            gameState = 'GAMEOVER';
+            let p2Label = gameMode === '2P' ? "PLAYER 2" : "CPU";
+            winnerText = score.player >= 5 ? "VITTORIA PLAYER 1!" : `VITTORIA ${p2Label}!`;
+        }
+    }
+
+    function resetPositions() {
+        ball.x = 400;
+        ball.y = 180;
+        ball.vx = 0;
+        ball.vy = 0;
+
+        player1.x = 200;
+        player1.y = GROUND_Y - player1.headRadius;
+        player1.vx = 0;
+        player1.vy = 0;
+
+        player2.x = 600;
+        player2.y = GROUND_Y - player2.headRadius;
+        player2.vx = 0;
+        player2.vy = 0;
+    }
+
+    // --- 3D GOAL & NET RENDERING ---
+    function draw3DGoal(x, y, isLeft) {
+        ctx.save();
+
+        const depthX = isLeft ? -28 : 28;
+        const depthY = -18;
+        const postThickness = 10;
+
+        const frontX = isLeft ? x + GOAL_WIDTH - postThickness : x;
+
+        function getBulgedPos(px, py) {
+            let dx = ball.x - px;
+            let dy = ball.y - py;
+            let dist = Math.hypot(dx, dy);
+            let maxDist = 70;
+            if (dist < maxDist && ball.y > CROSSBAR_Y) {
+                let factor = (1 - dist / maxDist) * 22;
+                let dirX = isLeft ? -1 : 1;
+                return { x: px + dirX * factor, y: py + (dy / dist) * factor * 0.4 };
+            }
+            return { x: px, y: py };
+        }
+
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.48)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+
+        for (let i = 0; i <= 8; i++) {
+            let t = i / 8;
+            let topX = x + t * GOAL_WIDTH;
+            let topY = y;
+            let bTopX = x + t * GOAL_WIDTH + depthX;
+            let bTopY = y + depthY;
+            let bBottomX = x + t * GOAL_WIDTH + depthX;
+            let bBottomY = GROUND_Y + depthY;
+
+            let p1 = getBulgedPos(topX, topY);
+            let p2 = getBulgedPos(bTopX, bTopY);
+            ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
+
+            let p3 = getBulgedPos(bBottomX, bBottomY);
+            ctx.moveTo(p2.x, p2.y); ctx.lineTo(p3.x, p3.y);
+        }
+
+        for (let j = 0; j <= 8; j++) {
+            let t = j / 8;
+            let frontY = y + t * GOAL_HEIGHT;
+            let backY = y + depthY + t * GOAL_HEIGHT;
+
+            let sideX1 = isLeft ? x : x + GOAL_WIDTH;
+            let sideX2 = isLeft ? x + depthX : x + GOAL_WIDTH + depthX;
+            let p1 = getBulgedPos(sideX1, frontY);
+            let p2 = getBulgedPos(sideX2, backY);
+            ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
+
+            let backLeftX = x + depthX;
+            let backRightX = x + GOAL_WIDTH + depthX;
+            let pb1 = getBulgedPos(backLeftX, backY);
+            let pb2 = getBulgedPos(backRightX, backY);
+            ctx.moveTo(pb1.x, pb1.y); ctx.lineTo(pb2.x, pb2.y);
+        }
+        ctx.stroke();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#0f172a';
+        ctx.lineWidth = 2;
+
+        ctx.fillRect(frontX, y, postThickness, GOAL_HEIGHT);
+        ctx.strokeRect(frontX, y, postThickness, GOAL_HEIGHT);
+
+        ctx.fillRect(x, y, GOAL_WIDTH, postThickness);
+        ctx.strokeRect(x, y, GOAL_WIDTH, postThickness);
+
+        ctx.fillStyle = '#dc2626';
+        for (let h = y + 15; h < GROUND_Y; h += 30) {
+            ctx.fillRect(frontX, h, postThickness, 12);
+        }
+        for (let w = x + 15; w < x + GOAL_WIDTH; w += 30) {
+            ctx.fillRect(w, y, 12, postThickness);
+        }
+
+        ctx.restore();
+    }
+
+    // --- SCOREBOARD UI ---
+    function drawCenteredScoreboard() {
+        ctx.save();
+        
+        const sbW = 280;
+        const sbH = 46;
+        const sbX = canvas.width / 2 - sbW / 2;
+        const sbY = 15;
+
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.roundRect(sbX, sbY, sbW, sbH, 10);
+        ctx.fill();
+        ctx.stroke();
+
+        // P1 Badge
+        ctx.fillStyle = player1.skin.shoeColor1 || '#0284c7';
+        ctx.beginPath();
+        ctx.roundRect(sbX + 8, sbY + 6, 60, 34, 6);
+        ctx.fill();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '12px "Press Start 2P"';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText("P1", sbX + 38, sbY + 23);
+
+        // P2/CPU Badge
+        ctx.fillStyle = player2.skin.shoeColor1 || '#dc2626';
+        ctx.beginPath();
+        ctx.roundRect(sbX + sbW - 68, sbY + 6, 60, 34, 6);
+        ctx.fill();
+
+        let p2Title = gameMode === '2P' ? "P2" : "CPU";
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '12px "Press Start 2P"';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(p2Title, sbX + sbW - 38, sbY + 23);
+
+        // Scores
+        ctx.fillStyle = '#facc15';
+        ctx.font = '18px "Press Start 2P"';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${score.player} : ${score.cpu}`, canvas.width / 2, sbY + 24);
+
+        ctx.restore();
+    }
+
+    function drawField() {
+        let crowdGrad = ctx.createLinearGradient(0, 0, 0, 200);
+        crowdGrad.addColorStop(0, '#0f172a');
+        crowdGrad.addColorStop(1, '#1e293b');
+        ctx.fillStyle = crowdGrad;
+        ctx.fillRect(0, 0, canvas.width, 200);
+
+        for (let i = 0; i < 250; i++) {
+            let x = (i * 17) % canvas.width;
+            let y = 30 + (i * 11) % 150;
+            ctx.fillStyle = ['#ef4444', '#3b82f6', '#facc15', '#ffffff', '#10b981'][i % 5];
+            ctx.fillRect(x, y, 3, 3);
+        }
+
+        ctx.fillStyle = '#1e3a8a';
+        ctx.fillRect(0, 200, canvas.width, 100);
+        ctx.strokeStyle = '#0f172a';
+        ctx.lineWidth = 6;
+        ctx.strokeRect(0, 200, canvas.width, 100);
+
+        ctx.fillStyle = '#60a5fa';
+        ctx.font = '20px "Press Start 2P"';
+        ctx.textAlign = 'center';
+        ctx.fillText("HEAD BALL 2D CHAMPIONSHIP", canvas.width / 2, 260);
+
+        let fieldGrad = ctx.createLinearGradient(0, 300, 0, canvas.height);
+        fieldGrad.addColorStop(0, '#15803d');
+        fieldGrad.addColorStop(1, '#166534');
+        ctx.fillStyle = fieldGrad;
+        ctx.fillRect(0, 300, canvas.width, canvas.height - 300);
+
+        for (let i = 0; i < canvas.width; i += 60) {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.08)';
+            ctx.fillRect(i, 300, 30, canvas.height - 300);
+        }
+
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+        ctx.lineWidth = 4;
+
+        ctx.beginPath();
+        ctx.moveTo(canvas.width / 2, 300);
+        ctx.lineTo(canvas.width / 2, canvas.height);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(canvas.width / 2, 400, 65, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(canvas.width / 2, 400, 5, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+
+        draw3DGoal(0, CROSSBAR_Y, true);
+        draw3DGoal(canvas.width - GOAL_WIDTH, CROSSBAR_Y, false);
+    }
+
+    // --- CHARACTER SELECT SCREEN (FC 27 STYLE WITH MODE TOGGLE) ---
+    function drawCharacterSelectScreen() {
+        ctx.fillStyle = '#0b0f19';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = '#facc15';
+        ctx.font = '20px "Press Start 2P"';
+        ctx.textAlign = 'center';
+        ctx.fillText("SELEZIONE PERSONAGGI", canvas.width / 2, 36);
+
+        // GAME MODE TOGGLE BUTTON
+        let isHoverMode = isMouseOver(210, 50, 380, 36);
+        ctx.fillStyle = isHoverMode ? '#38bdf8' : '#1e293b';
+        ctx.strokeStyle = '#facc15';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.roundRect(210, 50, 380, 36, 8);
+        ctx.fill(); ctx.stroke();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '10px "Press Start 2P"';
+        let modeText = gameMode === '1P' ? "MODO: 1 GIOCATORE (vs CPU)" : "MODO: 2 GIOCATORI (Locale)";
+        ctx.fillText(modeText, canvas.width / 2, 73);
+
+        previewAnimTimer += 0.08;
+        let bounceY = Math.sin(previewAnimTimer) * 6;
+
+        // P1 CARD
+        const p1Skin = SKINS[selectedP1Index];
+        ctx.fillStyle = '#1e293b';
+        ctx.strokeStyle = '#0284c7';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.roundRect(50, 100, 300, 305, 12);
+        ctx.fill(); ctx.stroke();
+
+        ctx.fillStyle = '#0284c7';
+        ctx.font = '13px "Press Start 2P"';
+        ctx.fillText("GIOCATORE 1", 200, 128);
+
+        drawArrowButton(75, 235, 'left', isMouseOver(55, 215, 40, 40));
+        drawArrowButton(325, 235, 'right', isMouseOver(305, 215, 40, 40));
+
+        let previewFootX1 = 200 + 18;
+        let previewFootY1 = 235 + bounceY + 24;
+        drawSkinFoot(ctx, previewFootX1, previewFootY1, 14, 1, false, 0, p1Skin);
+        drawSkinHead(ctx, 200, 235 + bounceY, 32, 1, p1Skin);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '12px "Press Start 2P"';
+        ctx.fillText(p1Skin.name, 200, 335);
+
+        ctx.fillStyle = '#facc15';
+        ctx.font = '8px "Press Start 2P"';
+        ctx.fillText(p1Skin.tagline, 200, 360);
+
+
+        // P2 / CPU CARD
+        const cpuSkin = SKINS[selectedCPUIndex];
+        ctx.fillStyle = '#1e293b';
+        ctx.strokeStyle = '#dc2626';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.roundRect(450, 100, 300, 305, 12);
+        ctx.fill(); ctx.stroke();
+
+        ctx.fillStyle = '#dc2626';
+        ctx.font = '13px "Press Start 2P"';
+        let p2CardTitle = gameMode === '2P' ? "GIOCATORE 2" : "OPPONENTE CPU";
+        ctx.fillText(p2CardTitle, 600, 128);
+
+        drawArrowButton(475, 235, 'left', isMouseOver(455, 215, 40, 40));
+        drawArrowButton(725, 235, 'right', isMouseOver(705, 215, 40, 40));
+
+        let previewFootX2 = 600 - 18;
+        let previewFootY2 = 235 + bounceY + 24;
+        drawSkinFoot(ctx, previewFootX2, previewFootY2, 14, -1, false, 0, cpuSkin);
+        drawSkinHead(ctx, 600, 235 + bounceY, 32, -1, cpuSkin);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '12px "Press Start 2P"';
+        ctx.fillText(cpuSkin.name, 600, 335);
+
+        ctx.fillStyle = '#facc15';
+        ctx.font = '8px "Press Start 2P"';
+        ctx.fillText(cpuSkin.tagline, 600, 360);
+
+        // VS Badge
+        ctx.fillStyle = '#facc15';
+        ctx.font = '22px "Press Start 2P"';
+        ctx.fillText("VS", 400, 240);
+
+        // START BUTTON
+        let isHoverStart = isMouseOver(250, 425, 300, 50);
+        ctx.fillStyle = isHoverStart ? '#22c55e' : '#15803d';
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.roundRect(250, 425, 300, 50, 10);
+        ctx.fill(); ctx.stroke();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '13px "Press Start 2P"';
+        ctx.fillText("CONFERMA E GIOCA ➔", 400, 456);
+    }
+
+    function drawArrowButton(x, y, dir, isHover) {
+        ctx.fillStyle = isHover ? '#facc15' : '#334155';
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(x, y, 18, 0, Math.PI * 2);
+        ctx.fill(); ctx.stroke();
+
+        ctx.fillStyle = isHover ? '#0f172a' : '#ffffff';
+        ctx.font = '16px "Press Start 2P"';
+        ctx.fillText(dir === 'left' ? "◄" : "►", x, y + 5);
+    }
+
+    function isMouseOver(x, y, w, h) {
+        return mouseX >= x && mouseX <= x + w && mouseY >= y && mouseY <= y + h;
+    }
+
+    function handleCharSelectClick() {
+        // Toggle Game Mode Button
+        if (isMouseOver(210, 50, 380, 36)) {
+            gameMode = gameMode === '1P' ? '2P' : '1P';
+        }
+
+        // P1 Prev
+        if (Math.hypot(mouseX - 75, mouseY - 235) < 25) {
+            selectedP1Index = (selectedP1Index - 1 + SKINS.length) % SKINS.length;
+        }
+        // P1 Next
+        if (Math.hypot(mouseX - 325, mouseY - 235) < 25) {
+            selectedP1Index = (selectedP1Index + 1) % SKINS.length;
+        }
+
+        // CPU Prev
+        if (Math.hypot(mouseX - 475, mouseY - 235) < 25) {
+            selectedCPUIndex = (selectedCPUIndex - 1 + SKINS.length) % SKINS.length;
+        }
+        // CPU Next
+        if (Math.hypot(mouseX - 725, mouseY - 235) < 25) {
+            selectedCPUIndex = (selectedCPUIndex + 1) % SKINS.length;
+        }
+
+        // Confirm Button
+        if (isMouseOver(250, 425, 300, 50)) {
+            startMatch();
+        }
+    }
+
+    // --- OTHER SCREENS ---
+    function drawStartScreen() {
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = '#facc15';
+        ctx.font = '32px "Press Start 2P"';
+        ctx.textAlign = 'center';
+        ctx.fillText("HEAD BALL 2D", canvas.width / 2, 180);
+
+        ctx.fillStyle = '#38bdf8';
+        ctx.font = '12px "Press Start 2P"';
+        ctx.fillText("ARCADE SOCCER EDITION", canvas.width / 2, 225);
+
+        pulseTimer += 0.05;
+        let alpha = Math.abs(Math.sin(pulseTimer));
+        ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+        ctx.font = '14px "Press Start 2P"';
+        ctx.fillText("PREMI INVIO PER INIZIARE", canvas.width / 2, 340);
+    }
+
+    function drawMainMenu() {
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = '#facc15';
+        ctx.font = '28px "Press Start 2P"';
+        ctx.textAlign = 'center';
+        ctx.fillText("MENU PRINCIPALE", canvas.width / 2, 120);
+
+        for (let i = 0; i < menuOptions.length; i++) {
+            let btnY = 230 + i * 60;
+            let isSelected = i === selectedMenuItem;
+
+            if (mouseX > canvas.width / 2 - 150 && mouseX < canvas.width / 2 + 150 &&
+                mouseY > btnY - 25 && mouseY < btnY + 25) {
+                selectedMenuItem = i;
+                isSelected = true;
+            }
+
+            ctx.fillStyle = isSelected ? '#3b82f6' : '#1e293b';
+            ctx.strokeStyle = isSelected ? '#facc15' : '#475569';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.roundRect(canvas.width / 2 - 160, btnY - 25, 320, 50, 10);
+            ctx.fill(); ctx.stroke();
+
+            ctx.fillStyle = isSelected ? '#ffffff' : '#94a3b8';
+            ctx.font = '14px "Press Start 2P"';
+            ctx.fillText(menuOptions[i], canvas.width / 2, btnY + 5);
+        }
+    }
+
+    function drawControlsScreen() {
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = '#facc15';
+        ctx.font = '22px "Press Start 2P"';
+        ctx.textAlign = 'center';
+        ctx.fillText("CONTROLLI DI GIOCO", canvas.width / 2, 80);
+
+        ctx.font = '11px "Press Start 2P"';
+
+        let items = [
+            { key: "PLAYER 1", desc: "A/D: Muovi | W: Salta | SPAZIO: Calcio" },
+            { key: "PLAYER 2 (2P)", desc: "FRECCE: Muovi/Salta | 0: Calcio" },
+            { key: "SELEZIONE SKIN", desc: "M: Cambia Modalità 1P/2P" },
+            { key: "MENU / AVVIA", desc: "INVIO (ENTER)" }
+        ];
+
+        for (let i = 0; i < items.length; i++) {
+            let y = 160 + i * 55;
+            ctx.fillStyle = '#38bdf8';
+            ctx.textAlign = 'center';
+            ctx.fillText(items[i].key, canvas.width / 2, y);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '9px "Press Start 2P"';
+            ctx.fillText(items[i].desc, canvas.width / 2, y + 20);
+            ctx.font = '11px "Press Start 2P"';
+        }
+
+        pulseTimer += 0.05;
+        let alpha = Math.abs(Math.sin(pulseTimer));
+        ctx.fillStyle = `rgba(250, 204, 21, ${alpha})`;
+        ctx.textAlign = 'center';
+        ctx.fillText("PREMI INVIO O CLICCA PER TORNARE", canvas.width / 2, 430);
+    }
+
+    function drawUI() {
+        drawCenteredScoreboard();
+
+        if (gameState === 'GOAL' || gameState === 'GAMEOVER') {
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.75)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.fillStyle = '#facc15';
+            ctx.font = '24px "Press Start 2P"';
+            ctx.textAlign = 'center';
+            ctx.fillText(winnerText, canvas.width / 2, canvas.height / 2 - 20);
+
+            if (gameState === 'GAMEOVER') {
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '12px "Press Start 2P"';
+                ctx.fillText("PREMI INVIO PER IL MENU", canvas.width / 2, canvas.height / 2 + 40);
+            }
+        }
+    }
+
+    // --- MAIN GAME LOOP ---
+    function gameLoop() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        if (gameState === 'START') {
+            drawStartScreen();
+        } else if (gameState === 'MENU') {
+            drawMainMenu();
+        } else if (gameState === 'SELECT_CHAR') {
+            drawCharacterSelectScreen();
+        } else if (gameState === 'CONTROLS') {
+            drawControlsScreen();
+        } else {
+            drawField();
+
+            if (gameState === 'PLAYING') {
+                player1.update(ball);
+                player2.update(ball);
+                ball.update();
+
+                checkCollisions();
+                checkGoals();
+            } else if (gameState === 'GOAL') {
+                goalTimer--;
+                if (goalTimer <= 0) {
+                    resetPositions();
+                    gameState = 'PLAYING';
+                }
+            }
+
+            for (let i = confettis.length - 1; i >= 0; i--) {
+                confettis[i].update();
+                confettis[i].draw(ctx);
+                if (confettis[i].life <= 0) {
+                    confettis.splice(i, 1);
+                }
+            }
+
+            ball.draw(ctx);
+            player1.draw(ctx);
+            player2.draw(ctx);
+
+            drawUI();
+        }
+
+        requestAnimationFrame(gameLoop);
+    }
+
+    requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>
